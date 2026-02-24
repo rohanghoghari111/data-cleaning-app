@@ -29,7 +29,7 @@ if uploaded_file:
                 if val.strip():
                     manual_impute_values[col] = val
 
-    c1, c2 = st.columns(2)
+    c1, c2 = st.columns(2)       
     with c1:
         num_strat = st.radio("Numeric Strategy", ["Median", "Mean", "Do Not Fill"], horizontal=True)
     with c2:
@@ -105,7 +105,6 @@ if uploaded_file:
 
             elif chart_type == "Area Chart":
                 st.area_chart(final_df, x=x_col, y=y_col)
-
 
 
 
