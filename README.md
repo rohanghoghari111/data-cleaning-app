@@ -1,5 +1,10 @@
 # 🧹 Universal Logical Data Cleaning Pipeline
 
+
+# Run
+
+streamlit run app.py
+
 **Industry-Grade, Reusable & Scalable Data Cleaning Framework (Pandas-Based)**
 
 This project provides a **production-ready data cleaning pipeline** designed for real-world datasets (CSV, Excel, Pandas DataFrames). It is suitable for analytics, machine learning preprocessing, research datasets, ETL workflows, and dashboard applications (Streamlit, FastAPI, etc.).
