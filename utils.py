@@ -2,166 +2,187 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 
-# ===================== UNIVERSAL LOGICAL CLEANER =====================
 
-def convert_dates(df):
-    date_cols = ["order_date", "Order Date"]
-    for c in date_cols:
-        if c in df.columns:
-            df[c] = pd.to_datetime(df[c], errors="coerce")
-    return df
-
-def fix_textual_nulls(df):
-    null_like = [
-        "", " ", "  ", "nan", "NaN", "NAN",
-        "null", "NULL", "None", "none",
-        "undefined", "Undefined", "-"
-    ]
+# NULL FIX
+def fix_nulls(df):
+    null_like = ["", " ", "nan", "NaN", "NULL", "null", "None", "-", "undefined"]
     return df.replace(null_like, np.nan)
 
+
+# WHITESPACE
 def clean_whitespace(df):
-    for c in df.select_dtypes(include="object"):
-        df[c] = (
-            df[c]
-            .astype(str)
-            .str.strip()
-            .str.replace(r"\s+", " ", regex=True)
-            .replace("nan", np.nan)
-        )
+    for col in df.select_dtypes(include="object"):
+        df[col] = df[col].astype(str).str.strip().str.replace(r"\s+", " ", regex=True)
+        df[col] = df[col].replace("nan", np.nan)
     return df
 
-def standardize_data(df):
-    for c in df.select_dtypes(include="object"):
-        if c.lower() != "certificate":
-            df[c] = (
-                df[c]
-                .fillna("")
-                .astype(str)
-                .str.strip()
-                .str.title()
-                .replace("", np.nan)
-            )
 
-    mappings = {
-        "platform": {
-            "Amazom Prime": "Amazon Prime",
-            "Zee 5": "Zee5"
-        },
-        "country": {
-            "Indai": "India",
-            "India ": "India"
-        }
-    }
-
-    for col, mapping in mappings.items():
-        if col in df.columns:
-            df[col] = df[col].replace(mapping)
-
-    if "certificate" in df.columns:
-        df["certificate"] = (
-            df["certificate"]
-            .astype(str)
-            .str.upper()
-            .str.strip()
-        )
-        allowed = {"U", "UA", "A"}
-        df.loc[~df["certificate"].isin(allowed), "certificate"] = np.nan
-
+# NUMERIC DETECTION
+def detect_numeric(df):
+    for col in df.columns:
+        if df[col].dtype == "object":
+            converted = pd.to_numeric(df[col], errors="coerce")
+            if converted.notna().sum() > len(df)*0.6:
+                df[col] = converted
     return df
 
-def convert_and_validate_numeric(df):
-    numeric_candidates = [
-        "release_year", "duration_min", "imdb_rating",
-        "budget_cr", "box_office_cr", "profit_cr"
-    ]
 
-    for c in numeric_candidates:
-        if c in df.columns:
-            df[c] = pd.to_numeric(df[c], errors="coerce")
+# DATE DETECTION
+def detect_dates(df):
+    for col in df.columns:
+        if df[col].dtype == "object":
+            converted = pd.to_datetime(df[col], errors="coerce", format="mixed")
+            if converted.notna().sum() > len(df)*0.7:
+                df[col] = converted
+    return df
+
+
+# INVALID DATE FIX
+def fix_invalid_dates(df):
 
     current_year = datetime.now().year
 
-    if "release_year" in df.columns:
-        df.loc[
-            (df["release_year"] < 1800) |
-            (df["release_year"] > current_year + 1),
-            "release_year"
-        ] = np.nan
+    for col in df.select_dtypes(include="datetime"):
 
-    if "imdb_rating" in df.columns:
-        df.loc[
-            (df["imdb_rating"] < 0) |
-            (df["imdb_rating"] > 10),
-            "imdb_rating"
-        ] = np.nan
-
-    if "duration_min" in df.columns:
-        df.loc[df["duration_min"] <= 0, "duration_min"] = np.nan
-        df["duration_min"] = df["duration_min"].fillna(df["duration_min"].median())
-
-    if "budget_cr" in df.columns:
-        df.loc[df["budget_cr"] < 0, "budget_cr"] = np.nan
-        df["budget_cr"] = df["budget_cr"].fillna(df["budget_cr"].median())
-
-    if "box_office_cr" in df.columns:
-        df.loc[df["box_office_cr"] < 0, "box_office_cr"] = np.nan
-        df["box_office_cr"] = df["box_office_cr"].fillna(df["box_office_cr"].median())
+        df.loc[df[col].dt.year < 1900, col] = np.nan
+        df.loc[df[col].dt.year > current_year, col] = np.nan
+        df.loc[df[col].dt.year == 1970, col] = np.nan
 
     return df
 
-def enforce_logic(df):
-    if {"budget_cr", "box_office_cr"}.issubset(df.columns):
-        df["profit_cr"] = df["box_office_cr"] - df["budget_cr"]
+
+# NEGATIVE VALUES
+def fix_negative(df):
+    for col in df.select_dtypes(include="number"):
+        df.loc[df[col] < 0, col] = np.nan
     return df
+
+
+# TEXT NORMALIZE
+def normalize_text(df):
+    for col in df.select_dtypes(include="object"):
+        df[col] = df[col].str.title()
+    return df
+
+
+# HANDLE MISSING
+def handle_missing(df):
+
+    for col in df.select_dtypes(include="number"):
+        df[col] = df[col].fillna(df[col].median())
+
+    for col in df.select_dtypes(include="object"):
+        if not df[col].mode().empty:
+            df[col] = df[col].fillna(df[col].mode()[0])
+
+    for col in df.select_dtypes(include="datetime"):
+        df[col] = df[col].fillna(df[col].median())
+
+    return df
+
+
+# OUTLIERS
+def handle_outliers(df):
+
+    for col in df.select_dtypes(include="number"):
+
+        q1 = df[col].quantile(0.25)
+        q3 = df[col].quantile(0.75)
+
+        iqr = q3 - q1
+
+        lower = q1 - 1.5*iqr
+        upper = q3 + 1.5*iqr
+
+        df[col] = df[col].clip(lower, upper)
+
+    return df
+
 
 def finalize_types(df):
-    if "release_year" in df.columns:
-        df["release_year"] = df["release_year"].round().astype("Int64")
 
-    if "duration_min" in df.columns:
-        df["duration_min"] = df["duration_min"].round().astype("Int64")
+    for col in df.columns:
 
-    if "imdb_rating" in df.columns:
-        df["imdb_rating"] = df["imdb_rating"].round(1)
+        # skip datetime
+        if pd.api.types.is_datetime64_any_dtype(df[col]):
+            continue
+
+        # try numeric conversion
+        numeric = pd.to_numeric(df[col], errors="coerce")
+
+        if numeric.notna().sum() > len(df) * 0.6:
+
+            # integer detection
+            if (numeric.dropna() % 1 == 0).all():
+                df[col] = numeric.astype("Int64")
+            else:
+                df[col] = numeric.astype("float64")
+
+            continue
+
+        # try datetime conversion
+        date = pd.to_datetime(df[col], errors="coerce", format="mixed")
+
+        if date.notna().sum() > len(df) * 0.8:
+            df[col] = date
 
     return df
 
-# ===================== FINAL PIPELINE =====================
 
+# FULL PIPELINE
 def full_clean_pipeline(df):
-    df = fix_textual_nulls(df)
+
+    df = fix_nulls(df)
+
     df = clean_whitespace(df)
-    df = standardize_data(df)
-    df = convert_and_validate_numeric(df)
-    df = convert_dates(df)
-    df = enforce_logic(df)
-    df = df.drop_duplicates().reset_index(drop=True)
+
+    df = detect_numeric(df)
+
+    df = detect_dates(df)
+
+    df = fix_invalid_dates(df)
+
+    df = fix_negative(df)
+
+    df = normalize_text(df)
+
+    df = handle_missing(df)
+
+    df = handle_outliers(df)
+
     df = finalize_types(df)
+
+    df = df.drop_duplicates().reset_index(drop=True)
+
     return df
 
+
+# CLEANING REPORT
+def generate_report(before, after):
+
+    return pd.DataFrame({
+
+        "Metric": ["Missing Values", "Duplicate Rows", "Rows"],
+
+        "Before": [
+            before.isnull().sum().sum(),
+            before.duplicated().sum(),
+            before.shape[0]
+        ],
+
+        "After": [
+            after.isnull().sum().sum(),
+            after.duplicated().sum(),
+            after.shape[0]
+        ]
+
+    })
+
+
+# DATATYPE TABLE
 def get_datatype_table(df):
+
     return pd.DataFrame({
         "Column": df.columns,
         "Datatype": df.dtypes.astype(str)
     })
-
-def generate_report(before, after):
-    return pd.DataFrame([
-        {
-            "Metric": "Missing Values",
-            "Before": int(before.isnull().sum().sum()),
-            "After": int(after.isnull().sum().sum())
-        },
-        {
-            "Metric": "Duplicate Rows",
-            "Before": int(before.duplicated().sum()),
-            "After": int(after.duplicated().sum())
-        }
-    ])
-
-
-
-
-
-
-
