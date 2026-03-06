@@ -1,8 +1,8 @@
-# 🧹 Universal Logical Data Cleaning Pipeline
+# 🧹 Universal Data Cleaning Pipeline
 
+## ▶ Run Application
 
-# Run
-
+```bash
 streamlit run app.py
 
 **Industry-Grade, Reusable & Scalable Data Cleaning Framework (Pandas-Based)**
